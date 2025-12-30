@@ -1,7 +1,10 @@
-from openai import AzureOpenAI
-from app.config import AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY
 import json
-import traceback
+from typing import List, Optional
+
+from openai import AzureOpenAI
+
+from app.config import AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY
+from app.utils.logging_utils import log_exception, safe_print
 
 def get_openai_client():
     return AzureOpenAI(
@@ -18,18 +21,17 @@ def get_embedding(text: str) -> list:
     )
     return response.data[0].embedding
 
-def analyze_files_for_handover(file_context: str) -> dict:
+def analyze_files_for_handover(file_context: str, index_names: Optional[List[str]] = None) -> dict:
     """파일 내용을 분석하여 인수인계서 JSON 생성 - 프론트엔드 HandoverData 형식으로 반환"""
-    from app.services.search_service import get_search_client
-    
+    from app.services.search_service import list_documents
+
     client = get_openai_client()
-    
+
     # Azure Search에서 모든 문서의 실제 내용 직접 검색
-    print("📄 Azure Search에서 모든 문서 검색 중...")
+    safe_print("📄 Azure Search에서 모든 문서 검색 중...")
     try:
-        search_client = get_search_client()
-        results = search_client.search(search_text="*", include_total_count=True, top=10)
-        
+        results = list_documents(index_names=index_names, top=10)
+
         doc_contents = []
         for result in results:
             file_name = result.get("file_name", "Unknown")
@@ -38,21 +40,20 @@ def analyze_files_for_handover(file_context: str) -> dict:
                 # 최대 1000자까지만 포함
                 content_preview = content[:1000]
                 doc_contents.append(f"[파일: {file_name}]\n{content_preview}\n")
-                print(f"✅ 문서 포함됨: {file_name} ({len(content)} 글자)")
-        
+                safe_print(f"✅ 문서 포함됨: {file_name} ({len(content)} 글자)")
+
         if doc_contents:
-            print(f"📋 {len(doc_contents)}개 문서 검색됨")
+            safe_print(f"📋 {len(doc_contents)}개 문서 검색됨")
             indexed_context = "\n".join(doc_contents)
             file_context = indexed_context if not file_context else file_context + "\n\n---\n\n" + indexed_context
         else:
-            print("⚠️  검색 결과가 비어있음")
+            safe_print("⚠️  검색 결과가 비어있음")
     except Exception as e:
-        print(f"⚠️  문서 검색 실패: {e}")
-        traceback.print_exc()
-    
+        log_exception("⚠️  문서 검색 실패: ", e)
+
     # 파일이 없거나 매우 짧으면 샘플 데이터 추가
     if not file_context or len(file_context.strip()) < 20:
-        print("ℹ️  파일 컨텍스트가 부족함 - 샘플 데이터 추가")
+        safe_print("ℹ️  파일 컨텍스트가 부족함 - 샘플 데이터 추가")
         file_context += """
 
 [샘플: 프로젝트 현황 보고]
@@ -65,8 +66,8 @@ def analyze_files_for_handover(file_context: str) -> dict:
 팀원: 박준호(프론트엔드), 최민수(QA)
 위험요소: 일정 지연 가능성 (2주)
 다음 마일스톤: 2025-02-01 알파 테스트"""
-    
-    print(f"📊 최종 컨텍스트 길이: {len(file_context)} 글자")
+
+    safe_print(f"📊 최종 컨텍스트 길이: {len(file_context)} 글자")
 
     system_message = """
 당신은 인수인계서 생성 전문가입니다. 반드시 유효한 JSON 형식으로만 답변하세요.
@@ -130,9 +131,9 @@ def analyze_files_for_handover(file_context: str) -> dict:
 """
 
     try:
-        print(f"🚀 Azure OpenAI 호출 시작...")
-        print(f"   - 엔드포인트: {AZURE_OPENAI_ENDPOINT}")
-        print(f"   - 컨텍스트 길이: {len(file_context)}")
+        safe_print("🚀 Azure OpenAI 호출 시작...")
+        safe_print(f"   - 엔드포인트: {AZURE_OPENAI_ENDPOINT}")
+        safe_print(f"   - 컨텍스트 길이: {len(file_context)}")
 
         response = client.chat.completions.create(
             model="gpt-4o",
@@ -145,18 +146,18 @@ def analyze_files_for_handover(file_context: str) -> dict:
             response_format={"type": "json_object"}
         )
 
-        print(f"✅ OpenAI 응답 수신")
+        safe_print("✅ OpenAI 응답 수신")
         response_text = response.choices[0].message.content
-        print(f"   응답 길이: {len(response_text)} 글자")
+        safe_print(f"   응답 길이: {len(response_text)} 글자")
 
         # JSON 파싱 시도
         try:
-            print(f"🔍 JSON 파싱 시도...")
+            safe_print("🔍 JSON 파싱 시도...")
             result = json.loads(response_text)
-            print(f"✅ JSON 파싱 성공 - 키: {list(result.keys())}")
+            safe_print(f"✅ JSON 파싱 성공 - 키: {list(result.keys())}")
             return result
         except json.JSONDecodeError as e:
-            print(f"⚠️  JSON 파싱 실패: {e}")
+            safe_print(f"⚠️  JSON 파싱 실패: {e}")
             # JSON 파싱 실패 시 기본 구조 반환
             return {
                 "overview": {
@@ -175,14 +176,13 @@ def analyze_files_for_handover(file_context: str) -> dict:
                 "rawContent": response_text
             }
     except Exception as e:
-        print(f"❌ Azure OpenAI 호출 실패: {e}")
-        traceback.print_exc()
+        log_exception("❌ Azure OpenAI 호출 실패: ", e)
         # system_message 등 로컬 변수 참조 없이 에러만 반환
         raise Exception(f"API 에러: {e}")
 
 def chat_with_context(query: str, context: str) -> str:
     client = get_openai_client()
-    
+
     system_message = """당신은 '꿀단지' 인수인계서 생성 AI입니다. 🍯
 
 ## 핵심 원칙
@@ -223,9 +223,8 @@ def chat_with_context(query: str, context: str) -> str:
             temperature=0.7,
             max_tokens=4000
         )
-        
+
         return response.choices[0].message.content
     except Exception as e:
-        print(f"Error in chat_with_context: {e}")
-        traceback.print_exc()
+        log_exception("Error in chat_with_context: ", e)
         raise

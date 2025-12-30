@@ -11,20 +11,27 @@ import {
   Check,
 } from "lucide-react";
 import { SourceFile } from "../types";
-import { getIndexes, selectIndex, RagIndex, getBackendUrl } from "../services/geminiService";
+import { getIndexes, RagIndex, getBackendUrl } from "../services/geminiService";
 
 interface Props {
   files: SourceFile[];
   onUpload: (newFiles: SourceFile[]) => void;
   onRemove: (id: string) => void;
+  selectedIndexes: string[];
+  onSelectIndexes: (indexes: string[]) => void;
 }
 
-const SourceSidebar: React.FC<Props> = ({ files, onUpload, onRemove }) => {
+const SourceSidebar: React.FC<Props> = ({
+  files,
+  onUpload,
+  onRemove,
+  selectedIndexes,
+  onSelectIndexes,
+}) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // RAG 인덱스 상태
   const [ragIndexes, setRagIndexes] = useState<RagIndex[]>([]);
-  const [currentIndex, setCurrentIndex] = useState<string>("");
   const [isLoadingIndexes, setIsLoadingIndexes] = useState(false);
 
   // 인덱스 목록 불러오기
@@ -33,7 +40,9 @@ const SourceSidebar: React.FC<Props> = ({ files, onUpload, onRemove }) => {
     try {
       const data = await getIndexes();
       setRagIndexes(data.indexes);
-      setCurrentIndex(data.current_index);
+      if (selectedIndexes.length === 0 && data.current_index) {
+        onSelectIndexes([data.current_index]);
+      }
       console.log("✅ 인덱스 목록 로드:", data.indexes.length, "개");
     } catch (error) {
       console.error("❌ 인덱스 목록 로드 실패:", error);
@@ -42,15 +51,13 @@ const SourceSidebar: React.FC<Props> = ({ files, onUpload, onRemove }) => {
     }
   };
 
-  // 인덱스 선택
-  const handleSelectIndex = async (indexName: string) => {
-    try {
-      const result = await selectIndex(indexName);
-      setCurrentIndex(result.current_index);
-      console.log("✅ 인덱스 선택됨:", result.current_index);
-    } catch (error) {
-      console.error("❌ 인덱스 선택 실패:", error);
+  // 인덱스 선택 (다중 선택)
+  const handleSelectIndex = (indexName: string) => {
+    if (selectedIndexes.includes(indexName)) {
+      onSelectIndexes(selectedIndexes.filter((name) => name !== indexName));
+      return;
     }
+    onSelectIndexes([...selectedIndexes, indexName]);
   };
 
   // 컴포넌트 마운트 시 인덱스 목록 로드
@@ -66,6 +73,8 @@ const SourceSidebar: React.FC<Props> = ({ files, onUpload, onRemove }) => {
         let content = "";
 
         // 텍스트 파일은 직접 읽기
+        let needsUpload = false;
+
         if (
           file.type === "text/plain" ||
           file.name.endsWith(".txt") ||
@@ -79,6 +88,7 @@ const SourceSidebar: React.FC<Props> = ({ files, onUpload, onRemove }) => {
             };
             reader.readAsText(file);
           });
+          needsUpload = true;
         } else if (
           file.type === "application/pdf" ||
           file.name.endsWith(".pdf")
@@ -86,11 +96,18 @@ const SourceSidebar: React.FC<Props> = ({ files, onUpload, onRemove }) => {
           // PDF 파일은 백엔드로 업로드 (OCR 처리)
           const formData = new FormData();
           formData.append("file", file);
+          const indexParam =
+            selectedIndexes.length > 0
+              ? `?index_names=${encodeURIComponent(selectedIndexes.join(","))}`
+              : "";
           try {
-            const response = await fetch(`${getBackendUrl()}/api/upload/upload`, {
+            const response = await fetch(
+              `${getBackendUrl()}/api/upload/upload${indexParam}`,
+              {
               method: "POST",
               body: formData,
-            });
+              }
+            );
             if (!response.ok) {
               throw new Error(`Upload failed: ${response.statusText}`);
             }
@@ -100,6 +117,36 @@ const SourceSidebar: React.FC<Props> = ({ files, onUpload, onRemove }) => {
           } catch (error) {
             console.error("❌ PDF 업로드 실패:", error);
             content = "[PDF 업로드 중 오류 발생]";
+          }
+        } else {
+          needsUpload = true;
+        }
+
+        if (needsUpload) {
+          // 기타 파일도 백엔드로 업로드하여 인덱싱
+          const formData = new FormData();
+          formData.append("file", file);
+          const indexParam =
+            selectedIndexes.length > 0
+              ? `?index_names=${encodeURIComponent(selectedIndexes.join(","))}`
+              : "";
+          try {
+            const response = await fetch(
+              `${getBackendUrl()}/api/upload/upload${indexParam}`,
+              {
+                method: "POST",
+                body: formData,
+              }
+            );
+            if (!response.ok) {
+              throw new Error(`Upload failed: ${response.statusText}`);
+            }
+            const data = await response.json();
+            content = data.extracted_text || content;
+            console.log("✅ 파일 인덱싱 완료:", file.name);
+          } catch (error) {
+            console.error("❌ 파일 업로드 실패:", error);
+            content = content || "[파일 업로드 중 오류 발생]";
           }
         }
 
@@ -179,6 +226,7 @@ const SourceSidebar: React.FC<Props> = ({ files, onUpload, onRemove }) => {
         <div className="bg-gray-50/50 rounded-2xl p-4 border border-gray-100">
           <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
             <Database className="w-3 h-3 text-yellow-500" /> 지식보관소 선택
+            <span className="ml-1 text-[9px] text-gray-300">(다중 선택)</span>
             <button
               onClick={loadIndexes}
               disabled={isLoadingIndexes}
@@ -188,7 +236,7 @@ const SourceSidebar: React.FC<Props> = ({ files, onUpload, onRemove }) => {
               <RefreshCw className={`w-3 h-3 text-gray-400 ${isLoadingIndexes ? 'animate-spin' : ''}`} />
             </button>
           </h3>
-          
+
           {isLoadingIndexes ? (
             <div className="text-center py-2 text-xs text-gray-400">
               로딩 중...
@@ -204,17 +252,17 @@ const SourceSidebar: React.FC<Props> = ({ files, onUpload, onRemove }) => {
                   key={idx.name}
                   onClick={() => handleSelectIndex(idx.name)}
                   className={`w-full px-3 py-2 rounded-lg text-left text-[11px] font-bold transition-all flex items-center justify-between ${
-                    currentIndex === idx.name
+                    selectedIndexes.includes(idx.name)
                       ? "bg-yellow-400 text-white shadow-sm border border-yellow-400"
                       : "bg-white text-gray-500 border border-gray-100 hover:border-yellow-200 hover:bg-yellow-50"
                   }`}
                 >
                   <span className="truncate">{idx.name}</span>
                   <span className="flex items-center gap-1">
-                    <span className={`text-[9px] ${currentIndex === idx.name ? 'text-yellow-100' : 'text-gray-300'}`}>
+                    <span className={`text-[9px] ${selectedIndexes.includes(idx.name) ? 'text-yellow-100' : 'text-gray-300'}`}>
                       {idx.document_count}건
                     </span>
-                    {currentIndex === idx.name && (
+                    {selectedIndexes.includes(idx.name) && (
                       <Check className="w-3 h-3" />
                     )}
                   </span>

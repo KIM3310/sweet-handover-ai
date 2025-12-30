@@ -1,15 +1,30 @@
+import sys
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from app.routers import upload, chat
+
+from app.routers import chat, report, upload
 from app.config import validate_config
-import os
+from app.utils.logging_utils import safe_print
+
+
+def _reconfigure_stdio_utf8() -> None:
+    """Reconfigure stdout and stderr to use UTF-8 encoding."""
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+
+_reconfigure_stdio_utf8()
 
 # 환경 변수 검증
 is_config_valid = validate_config()
 if not is_config_valid:
-    print("⚠️  Warning: Some environment variables are missing. Some features may not work correctly.")
+    safe_print("⚠️  Warning: Some environment variables are missing. Some features may not work correctly.")
 
 app = FastAPI(title="RAG Chatbot API")
 
@@ -41,6 +56,7 @@ def root():
 
 app.include_router(upload.router, prefix="/api/upload", tags=["Upload"])
 app.include_router(chat.router, prefix="/api", tags=["Chat"])
+app.include_router(report.router, prefix="/api/report", tags=["Report"])
 
 # Health check endpoint
 @app.get("/api/health")
