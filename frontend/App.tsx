@@ -13,6 +13,7 @@ import {
 import {
   analyzeFilesForHandover,
   chatWithGemini,
+  getBackendUrl,
 } from "./services/geminiService";
 
 const STORAGE_KEY_SESSIONS = "honeycomb_chat_sessions";
@@ -25,6 +26,7 @@ const App: React.FC = () => {
   const [handoverData, setHandoverData] = useState<HandoverData | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.CHAT);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedIndexes, setSelectedIndexes] = useState<string[]>([]);
 
   // 채팅 세션 관리
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
@@ -135,7 +137,12 @@ const App: React.FC = () => {
     }
 
     try {
-      const responseText = await chatWithGemini(text, files, updatedMessages);
+      const responseText = await chatWithGemini(
+        text,
+        files,
+        updatedMessages,
+        selectedIndexes
+      );
       const aiMsg: ChatMessage = { role: "assistant", text: responseText };
       const finalMessages = [...updatedMessages, aiMsg];
       setMessages(finalMessages);
@@ -187,8 +194,13 @@ const App: React.FC = () => {
           "📚 업로드된 파일이 없음 - AI Search 인덱스에서 문서 조회..."
         );
         try {
+          const backendUrl = getBackendUrl();
+          const indexParam =
+            selectedIndexes.length > 0
+              ? `?index_names=${encodeURIComponent(selectedIndexes.join(","))}`
+              : "";
           const response = await fetch(
-            "http://localhost:8000/api/upload/documents"
+            `${backendUrl}/api/upload/documents${indexParam}`
           );
           if (response.ok) {
             const data = await response.json();
@@ -227,7 +239,10 @@ const App: React.FC = () => {
       }
 
       console.log("📊 인수인계서 분석 시작...", filesToAnalyze);
-      const data = await analyzeFilesForHandover(filesToAnalyze);
+      const data = await analyzeFilesForHandover(
+        filesToAnalyze,
+        selectedIndexes
+      );
       console.log("✅ 분석 완료:", data);
       setHandoverData(data);
       setMessages((prev) => [
@@ -259,6 +274,8 @@ const App: React.FC = () => {
         files={files}
         onUpload={handleFileUpload}
         onRemove={handleFileRemove}
+        selectedIndexes={selectedIndexes}
+        onSelectIndexes={setSelectedIndexes}
       />
 
       <main className="flex-1 flex gap-8 p-8 overflow-hidden relative z-10">

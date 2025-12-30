@@ -1,15 +1,30 @@
+import os
+import sys
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from app.routers import upload, chat
+from fastapi.staticfiles import StaticFiles
+
 from app.config import validate_config
-import os
+from app.routers import chat, report, upload
+from app.utils.logging_utils import safe_print
+
+def _reconfigure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if stream and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except Exception:
+                pass
+
+
+_reconfigure_stdio()
 
 # 환경 변수 검증
 is_config_valid = validate_config()
 if not is_config_valid:
-    print("⚠️  Warning: Some environment variables are missing. Some features may not work correctly.")
+    safe_print("⚠️  Warning: Some environment variables are missing. Some features may not work correctly.")
 
 app = FastAPI(title="RAG Chatbot API")
 
@@ -41,6 +56,7 @@ def root():
 
 app.include_router(upload.router, prefix="/api/upload", tags=["Upload"])
 app.include_router(chat.router, prefix="/api", tags=["Chat"])
+app.include_router(report.router, prefix="/api/report", tags=["Report"])
 
 # Health check endpoint
 @app.get("/api/health")
