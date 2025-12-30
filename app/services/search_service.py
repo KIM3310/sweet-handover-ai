@@ -12,8 +12,10 @@ from azure.search.documents.indexes.models import (
 )
 from azure.core.credentials import AzureKeyCredential
 from app.config import AZURE_SEARCH_ENDPOINT, AZURE_SEARCH_KEY
+from typing import List, Optional
+
 from app.services.openai_service import get_embedding
-import traceback
+from app.utils.logging_utils import log_exception, safe_print
 
 # 현재 선택된 인덱스 (기본값)
 INDEX_NAME = "documents-index"
@@ -23,7 +25,7 @@ def set_current_index(index_name: str):
     """현재 사용할 인덱스 설정"""
     global _current_index
     _current_index = index_name
-    print(f"🔄 현재 인덱스 변경: {index_name}")
+    safe_print(f"🔄 현재 인덱스 변경: {index_name}")
 
 def get_current_index() -> str:
     """현재 선택된 인덱스 이름 반환"""
@@ -64,21 +66,20 @@ def list_all_indexes():
                 "document_count": doc_count,
                 "is_current": idx.name == _current_index
             })
-        print(f"📚 인덱스 목록 조회: {len(result)}개")
+        safe_print(f"📚 인덱스 목록 조회: {len(result)}개")
         return result
     except Exception as e:
-        print(f"❌ 인덱스 목록 조회 실패: {e}")
-        traceback.print_exc()
+        log_exception("❌ 인덱스 목록 조회 실패: ", e)
         return []
 
 def create_index_if_not_exists(index_name: str = None):
     target_index = index_name or _current_index
     index_client = get_search_index_client()
-    
+
     try:
         index_client.get_index(target_index)
         return
-    except:
+    except Exception:
         pass
     
     fields = [
@@ -106,12 +107,17 @@ def create_index_if_not_exists(index_name: str = None):
         ]
     )
     
-    index = SearchIndex(name=INDEX_NAME, fields=fields, vector_search=vector_search)
+    index = SearchIndex(name=target_index, fields=fields, vector_search=vector_search)
     index_client.create_index(index)
 
-def add_document_to_index(doc_id: str, content: str, file_name: str):
-    create_index_if_not_exists()
-    search_client = get_search_client()
+def add_document_to_index(
+    doc_id: str,
+    content: str,
+    file_name: str,
+    index_name: str = None
+):
+    create_index_if_not_exists(index_name)
+    search_client = get_search_client(index_name)
     
     # 긴 문서는 청크로 나누기
     max_length = 8000
@@ -129,33 +135,69 @@ def add_document_to_index(doc_id: str, content: str, file_name: str):
     
     search_client.upload_documents([document])
 
-def search_documents(query: str, top_k: int = 3):
+def search_documents(query: str, top_k: int = 3, index_names: Optional[List[str]] = None):
     from azure.search.documents.models import VectorizedQuery
     
-    search_client = get_search_client()
+    target_indexes = index_names or [_current_index]
     query_embedding = get_embedding(query)
-    
-    vector_query = VectorizedQuery(
-        vector=query_embedding,
-        k_nearest_neighbors=top_k,
-        fields="content_vector"
-    )
-    
-    results = search_client.search(
-        search_text=query,
-        vector_queries=[vector_query],
-        top=top_k
-    )
-    
     docs = []
-    for result in results:
-        docs.append({
-            "content": result["content"],
-            "file_name": result["file_name"],
-            "score": result["@search.score"]
-        })
-    
-    return docs
+
+    for index_name in target_indexes:
+        try:
+            search_client = get_search_client(index_name)
+            vector_query = VectorizedQuery(
+                vector=query_embedding,
+                k_nearest_neighbors=top_k,
+                fields="content_vector"
+            )
+            results = search_client.search(
+                search_text=query,
+                vector_queries=[vector_query],
+                top=top_k
+            )
+            for result in results:
+                docs.append({
+                    "content": result["content"],
+                    "file_name": result["file_name"],
+                    "score": result["@search.score"],
+                    "index_name": index_name,
+                })
+        except Exception as e:
+            log_exception(f"⚠️  인덱스 검색 실패 ({index_name}): ", e)
+
+    docs.sort(key=lambda item: item.get("score", 0), reverse=True)
+    return docs[:top_k]
+
+
+def list_documents(index_names: Optional[List[str]] = None, top: int = 100) -> list:
+    """AI Search 인덱스의 문서 목록 조회 (content 포함)."""
+    target_indexes = index_names or [_current_index]
+    docs = []
+    try:
+        for index_name in target_indexes:
+            try:
+                search_client = get_search_client(index_name)
+                results = search_client.search(
+                    search_text="*",
+                    include_total_count=True,
+                    top=top
+                )
+                for result in results:
+                    content = result.get("content", "")
+                    docs.append({
+                        "id": result.get("id", ""),
+                        "file_name": result.get("file_name", "Unknown"),
+                        "content": content,
+                        "content_length": len(content),
+                        "index_name": index_name,
+                    })
+            except Exception as e:
+                log_exception(f"⚠️  인덱스 문서 조회 실패 ({index_name}): ", e)
+        safe_print(f"📋 API 문서 조회: {len(docs)}개 문서")
+        return docs
+    except Exception as e:
+        log_exception("❌ 문서 목록 조회 실패: ", e)
+        return []
 
 def get_document_count() -> int:
     """AI Search 인덱스의 총 문서 개수 조회"""
@@ -168,11 +210,10 @@ def get_document_count() -> int:
             top=1
         )
         count = results.get_count()
-        print(f"📊 인덱스 문서 개수: {count}")
+        safe_print(f"📊 인덱스 문서 개수: {count}")
         return count if count else 0
     except Exception as e:
-        print(f"⚠️  문서 개수 조회 실패: {e}")
-        traceback.print_exc()
+        log_exception("⚠️  문서 개수 조회 실패: ", e)
         return 0
 
 def get_all_documents() -> list:
@@ -191,11 +232,12 @@ def get_all_documents() -> list:
                 "file_name": result.get("file_name", "Unknown"),
                 "content_length": len(result.get("content", ""))
             })
-        print(f"📋 인덱싱된 문서 목록: {len(docs)}개")
+        safe_print(f"📋 인덱싱된 문서 목록: {len(docs)}개")
         for doc in docs:
-            print(f"   - {doc['file_name']} (ID: {doc['id']}, 길이: {doc['content_length']})")
+            safe_print(
+                f"   - {doc['file_name']} (ID: {doc['id']}, 길이: {doc['content_length']})"
+            )
         return docs
     except Exception as e:
-        print(f"⚠️  문서 목록 조회 실패: {e}")
-        traceback.print_exc()
+        log_exception("⚠️  문서 목록 조회 실패: ", e)
         return []

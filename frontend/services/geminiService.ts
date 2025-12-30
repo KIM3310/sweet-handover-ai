@@ -150,7 +150,8 @@ function decodeBase64(base64String: string): string {
  * [분석] 인수인계서 생성
  */
 export const analyzeFilesForHandover = async (
-  files: SourceFile[]
+  files: SourceFile[],
+  indexNames: string[]
 ): Promise<HandoverData> => {
   // 파일 내용을 텍스트로 변환 (텍스트 파일 직접 사용)
   const fileContext = files
@@ -175,6 +176,7 @@ export const analyzeFilesForHandover = async (
       },
     ],
     response_format: { type: "json_object" },
+    index_names: indexNames,
   };
 
   try {
@@ -228,7 +230,8 @@ export const analyzeFilesForHandover = async (
 export const chatWithGemini = async (
   message: string,
   files: SourceFile[],
-  history: { role: string; text: string }[]
+  history: { role: string; text: string }[],
+  indexNames: string[]
 ): Promise<string> => {
   const payload = {
     messages: [
@@ -239,6 +242,7 @@ export const chatWithGemini = async (
       })),
       { role: "user", content: message },
     ],
+    index_names: indexNames,
   };
 
   // 채팅은 텍스트 응답이므로 직접 fetch 호출
