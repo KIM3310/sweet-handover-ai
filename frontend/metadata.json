@@ -1,0 +1,9 @@
+
+{
+  "name": "Kkuldanji - Azure Powered Handover",
+  "description": "Azure OpenAI와 Document Intelligence를 활용한 지능형 인수인계 서비스",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

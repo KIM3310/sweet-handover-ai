@@ -1,0 +1,71 @@
+{
+  "overview": {
+    "transferor": {
+      "name": "인계자명",
+      "position": "직급/부서",
+      "contact": "연락처"
+    },
+    "transferee": {
+      "name": "인수자명",
+      "position": "직급/부서",
+      "contact": "연락처",
+      "startDate": "시작일"
+    },
+    "reason": "인수인계 사유",
+    "background": "업무 배경",
+    "period": "근무 기간",
+    "schedule": [{ "date": "날짜", "activity": "활동" }]
+  },
+  "jobStatus": {
+    "title": "직책",
+    "responsibilities": ["책임내용1", "책임내용2"],
+    "authority": "권한",
+    "reportingLine": "보고체계",
+    "teamMission": "팀 미션",
+    "teamGoals": ["목표1", "목표2"]
+  },
+  "priorities": [
+    {
+      "rank": 1,
+      "title": "우선과제명",
+      "status": "상태",
+      "solution": "해결방안",
+      "deadline": "마감일"
+    }
+  ],
+  "stakeholders": {
+    "manager": "상급자",
+    "internal": [{ "name": "이름", "role": "역할" }],
+    "external": [{ "name": "이름", "role": "역할" }]
+  },
+  "teamMembers": [
+    { "name": "팀원명", "position": "직급", "role": "역할", "notes": "비고" }
+  ],
+  "ongoingProjects": [
+    {
+      "name": "프로젝트명",
+      "owner": "담당자",
+      "status": "상태",
+      "progress": 50,
+      "deadline": "마감일",
+      "description": "설명"
+    }
+  ],
+  "risks": { "issues": "현안", "risks": "위험요소" },
+  "roadmap": { "shortTerm": "단기계획", "longTerm": "장기계획" },
+  "resources": {
+    "docs": [{ "category": "분류", "name": "문서명", "location": "위치" }],
+    "systems": [
+      { "name": "시스템명", "usage": "사용방법", "contact": "담당자" }
+    ],
+    "contacts": [
+      {
+        "category": "분류",
+        "name": "이름",
+        "position": "직급",
+        "contact": "연락처"
+      }
+    ]
+  },
+  "checklist": [{ "text": "확인항목", "completed": false }]
+}
