@@ -17,8 +17,8 @@ interface Props {
   files: SourceFile[];
   onUpload: (newFiles: SourceFile[]) => void;
   onRemove: (id: string) => void;
-  selectedIndexes: string[];
-  onSelectIndexes: (indexes: string[]) => void;
+  selectedIndexes?: string[];
+  onSelectIndexes?: (indexes: string[]) => void;
 }
 
 const SourceSidebar: React.FC<Props> = ({
@@ -28,6 +28,8 @@ const SourceSidebar: React.FC<Props> = ({
   selectedIndexes,
   onSelectIndexes,
 }) => {
+  const safeSelectedIndexes = selectedIndexes ?? [];
+  const safeSelectIndexes = onSelectIndexes ?? (() => {});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // RAG 인덱스 상태
@@ -40,8 +42,8 @@ const SourceSidebar: React.FC<Props> = ({
     try {
       const data = await getIndexes();
       setRagIndexes(data.indexes);
-      if (selectedIndexes.length === 0 && data.current_index) {
-        onSelectIndexes([data.current_index]);
+      if (safeSelectedIndexes.length === 0 && data.current_index) {
+        safeSelectIndexes([data.current_index]);
       }
       console.log("✅ 인덱스 목록 로드:", data.indexes.length, "개");
     } catch (error) {
@@ -53,11 +55,11 @@ const SourceSidebar: React.FC<Props> = ({
 
   // 인덱스 선택 (다중 선택)
   const handleSelectIndex = (indexName: string) => {
-    if (selectedIndexes.includes(indexName)) {
-      onSelectIndexes(selectedIndexes.filter((name) => name !== indexName));
+    if (safeSelectedIndexes.includes(indexName)) {
+      safeSelectIndexes(safeSelectedIndexes.filter((name) => name !== indexName));
       return;
     }
-    onSelectIndexes([...selectedIndexes, indexName]);
+    safeSelectIndexes([...safeSelectedIndexes, indexName]);
   };
 
   // 컴포넌트 마운트 시 인덱스 목록 로드
@@ -97,8 +99,8 @@ const SourceSidebar: React.FC<Props> = ({
           const formData = new FormData();
           formData.append("file", file);
           const indexParam =
-            selectedIndexes.length > 0
-              ? `?index_names=${encodeURIComponent(selectedIndexes.join(","))}`
+            safeSelectedIndexes.length > 0
+              ? `?index_names=${encodeURIComponent(safeSelectedIndexes.join(","))}`
               : "";
           try {
             const response = await fetch(
@@ -127,8 +129,8 @@ const SourceSidebar: React.FC<Props> = ({
           const formData = new FormData();
           formData.append("file", file);
           const indexParam =
-            selectedIndexes.length > 0
-              ? `?index_names=${encodeURIComponent(selectedIndexes.join(","))}`
+            safeSelectedIndexes.length > 0
+              ? `?index_names=${encodeURIComponent(safeSelectedIndexes.join(","))}`
               : "";
           try {
             const response = await fetch(
@@ -252,17 +254,17 @@ const SourceSidebar: React.FC<Props> = ({
                   key={idx.name}
                   onClick={() => handleSelectIndex(idx.name)}
                   className={`w-full px-3 py-2 rounded-lg text-left text-[11px] font-bold transition-all flex items-center justify-between ${
-                    selectedIndexes.includes(idx.name)
+                    safeSelectedIndexes.includes(idx.name)
                       ? "bg-yellow-400 text-white shadow-sm border border-yellow-400"
                       : "bg-white text-gray-500 border border-gray-100 hover:border-yellow-200 hover:bg-yellow-50"
                   }`}
                 >
                   <span className="truncate">{idx.name}</span>
                   <span className="flex items-center gap-1">
-                    <span className={`text-[9px] ${selectedIndexes.includes(idx.name) ? 'text-yellow-100' : 'text-gray-300'}`}>
+                    <span className={`text-[9px] ${safeSelectedIndexes.includes(idx.name) ? 'text-yellow-100' : 'text-gray-300'}`}>
                       {idx.document_count}건
                     </span>
-                    {selectedIndexes.includes(idx.name) && (
+                    {safeSelectedIndexes.includes(idx.name) && (
                       <Check className="w-3 h-3" />
                     )}
                   </span>
